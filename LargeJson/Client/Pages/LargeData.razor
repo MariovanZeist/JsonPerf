@@ -1,0 +1,123 @@
+﻿@page "/largedata"
+@using LargeJson.Shared
+@using System.Diagnostics
+@using System.Text.Json
+@using Newtonsoft.Json
+@using System.IO
+@inject HttpClient Http
+
+<h1>large Data perf</h1>
+
+<p>UseGetFromJsonAsync: @_UseGetFromJsonAsyncTimeSpan</p>
+<p>UseGetFromJsonAsync2: @_UseGetFromJsonAsync2TimeSpan</p>
+<p>UseGetFromStream: @_UseGetFromStreamTimeSpan</p>
+<p>UseGetFromStream2: @_UseGetFromStream2TimeSpan</p>
+<p>UseNewtonSoftRaw: @_UseNewtonSoftRawTimeSpan</p>
+<p>UseTextJsonRaw: @_UseTextJsonTimeSpan</p>
+<p>UseSpecializedTextJsonRaw: @_UseSpecializedTextJsonTimeSpan</p>
+
+
+
+<button class="btn btn-primary" @onclick=@( async () => await GetlargeData())>get Large data</button>
+
+@code {
+    private int currentCount = 0;
+
+    private TimeSpan _UseGetFromJsonAsyncTimeSpan;
+    private TimeSpan _UseGetFromJsonAsync2TimeSpan;
+    private TimeSpan _UseGetFromStreamTimeSpan;
+    private TimeSpan _UseGetFromStream2TimeSpan;
+    private TimeSpan _UseNewtonSoftRawTimeSpan;
+    private TimeSpan _UseTextJsonTimeSpan;
+    private TimeSpan _UseSpecializedTextJsonTimeSpan;
+
+
+    internal static readonly JsonSerializerOptions s_defaultSerializerOptions
+       = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+
+    internal static readonly JsonSerializerOptions s_specialSerializerOptions
+       = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+
+    static LargeData()
+    {
+        s_specialSerializerOptions.Converters.Add(new MyItemConverter());
+        s_specialSerializerOptions.Converters.Add(new RefConverter());
+    }
+
+
+    private async Task GetlargeData()
+    {
+        var prime = await Http.GetByteArrayAsync("LargeData");
+        prime = await Http.GetByteArrayAsync("LargeData");
+
+        _UseGetFromJsonAsyncTimeSpan = await UseGetFromJsonAsync();
+        _UseGetFromJsonAsync2TimeSpan = await UseGetFromJsonAsync2();
+        _UseGetFromStreamTimeSpan = await UseGetFromStream();
+        _UseGetFromStream2TimeSpan = await UseGetFromStream2();
+
+
+        _UseNewtonSoftRawTimeSpan = await UseNewtonSoftRaw();
+        _UseTextJsonTimeSpan = await UseTextJsonRaw(s_defaultSerializerOptions);
+
+        _UseSpecializedTextJsonTimeSpan = await UseTextJsonRaw(s_specialSerializerOptions);
+    }
+
+
+    private async Task<TimeSpan> UseGetFromJsonAsync()
+    {
+        var t1 = Stopwatch.StartNew();
+        var textJson = await Http.GetFromJsonAsync<CosmosQuery<MyItem>>("LargeData");
+        return t1.Elapsed;
+    }
+
+    private async Task<TimeSpan> UseGetFromJsonAsync2()
+    {
+        var t1 = Stopwatch.StartNew();
+        var textJson = await Http.GetFromJsonAsync2<CosmosQuery<MyItem>>("LargeData", null);
+        return t1.Elapsed;
+    }
+
+
+    private async Task<TimeSpan> UseNewtonSoftRaw()
+    {
+        var t1 = Stopwatch.StartNew();
+        var response = await Http.GetStringAsync("LargeData");
+        var items = JsonConvert.DeserializeObject<CosmosQuery<MyItem>>(response).Documents;
+        return t1.Elapsed;
+    }
+
+    private async Task<TimeSpan> UseTextJsonRaw(JsonSerializerOptions options)
+    {
+        var t1 = Stopwatch.StartNew();
+        var response = await Http.GetByteArrayAsync("LargeData");
+        var items = ParseFromByteArray(response, options).Documents;
+        return t1.Elapsed;
+    }
+
+    private async Task<TimeSpan> UseGetFromStream()
+    {
+        var t1 = Stopwatch.StartNew();
+        var stream = await Http.GetStreamAsync("LargeData");
+        var data = await System.Text.Json.JsonSerializer.DeserializeAsync<CosmosQuery<MyItem>>(stream, s_defaultSerializerOptions);
+        return t1.Elapsed;
+    }
+
+    private async Task<TimeSpan> UseGetFromStream2()
+    {
+        var t1 = Stopwatch.StartNew();
+        var stream = await Http.GetStreamAsync("LargeData");
+        var data = await System.Text.Json.JsonSerializer.DeserializeAsync<CosmosQuery<MyItem>>(stream, s_defaultSerializerOptions);
+        return t1.Elapsed;
+    }
+
+
+
+    private CosmosQuery<MyItem> ParseFromByteArray(byte[] data, JsonSerializerOptions options)
+    {
+        var w = new Utf8JsonReader(data.AsSpan());
+        return System.Text.Json.JsonSerializer.Deserialize<CosmosQuery<MyItem>>(ref w);
+    }
+
+}
